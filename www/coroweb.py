@@ -23,6 +23,7 @@ def get(path):
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kw):
+            print('%s : %s' % (func.__name__, path))
             return func(*args, **kw)
 
         # 装饰后添加__method__和__route__这两个属性
@@ -138,7 +139,7 @@ class RequestHandler(object):  # 初始化一个请求处理类
                 if not request.content_type:
                     return web.HTTPBadRequest('Missing Content-Type')
                 ct = request.content_type.lower()
-                if ct.startwith('application/json'):
+                if ct.startswith('application/json'):
                     params = await request.json()  # 如果请求json数据格式
                     # 是否参数是dict格式，不是的话提示JSON BODY出错
                     if not isinstance(params, dict):
@@ -239,11 +240,10 @@ def add_routes(app, module_name):
     # 没有'.',则传入的是module名
     if n == (-1):
         mod = __import__(module_name, globals(), locals())
+        logging.info('globals = %s', globals()['__name__'])
     else:
         name = module_name[n + 1:]
         mod = getattr(__import__(module_name[:n], globals(), locals(), [name]), name)
-        # 上面两行是廖大大的源代码，但是把传入参数module_name的值改为'handlers.py'的话走这里是报错的，所以改成了下面这样
-        # mod = __import__(module_name[:n], globals(), locals())
 
     # 遍历mod的方法和属性,主要是招处理方法
     # 由于我们定义的处理方法，被@get或@post修饰过，所以方法里会有'__method__'和'__route__'属性
@@ -256,7 +256,7 @@ def add_routes(app, module_name):
         fn = getattr(mod, attr)
         if callable(fn):
             # 检测'__method__'和'__route__'属性
-            method = getattr(fn, '__mothod__', None)
+            method = getattr(fn, '__method__', None)
             path = getattr(fn, '__route__', None)
             if method and path:
                 # 如果都有，说明使我们定义的处理方法，加到app对象里处理route中

@@ -3,17 +3,20 @@
 
 import logging
 
-logging.basicConfig(level=logging.INFO)  # 必须紧跟其后
-
-import asyncio, os, json, time
+logging.basicConfig(level=logging.INFO)  # 紧随其后，否则部分日志出不来
+import asyncio
+import json
+import os
+import time
 from datetime import datetime
 
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader
 
 import orm
-from coroweb import add_routes, add_static
 from config import configs
+from coroweb import add_routes, add_static
+from handlers import cookie2user, COOKIE_NAME
 
 
 def init_jinja2(app, **kw):
@@ -63,10 +66,10 @@ async def logger_factory(app, handler):  # 在正式处理之前打印日志
 async def data_factory(app, handler):
     async def parse_data(request):
         if request.method == 'POST':
-            if request.content_type.startwith('application/json'):
+            if request.content_type.startswith('application/json'):
                 request.__data__ = await request.json()
                 logging.info('request json: %s' % str(request.__data__))
-            elif request.content_type.startwith('application/x-www-form-urlencoded'):
+            elif request.content_type.startswith('application/x-www-form-urlencoded'):
                 request.__data__ = await request.post()
                 logging.info('request form: %s' % str(request.__data__))
         return (await handler(request))
@@ -74,26 +77,27 @@ async def data_factory(app, handler):
     return parse_data
 
 
-# 是为了验证当前的这个请求用户是否在登录状态下，或是否是伪造的sha1
-# async def auth_factory(app, handler):
-#     async def auth(request):
-#         logging.info('check user: %s %s' % (request.method, request.path))
-#         request.__user__ = None
-#         # 获取到cookie字符串
-#         cookie_str = request.cookies.get(COOKIE_NAME)
-#         if cookie_str:
-#             # 通过反向解析字符串和与数据库对比获取出user
-#             user = await cookie2user(cookie_str)
-#             if user:
-#                 logging.info('set current user: %s' % user.email)
-#                 # user存在则绑定到request上，说明当前用户是合法的
-#                 request.__user__ = user
-#         if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
-#             return web.HTTPFound('/signin')
-#         # 执行下一步
-#         return (await handler(request))
-#
-#     return auth
+async def auth_factory(app, handler):
+    """ 是为了验证当前的这个请求用户是否在登录状态下，或是否是伪造的sha1 """
+
+    async def auth(request):
+        logging.info('check user: %s %s' % (request.method, request.path))
+        request.__user__ = None
+        # 获取到cookie字符串
+        cookie_str = request.cookies.get(COOKIE_NAME)
+        if cookie_str:
+            # 通过反向解析字符串和与数据库对比获取出user
+            user = await cookie2user(cookie_str)
+            if user:
+                logging.info('set current user: %s' % user.email)
+                # user存在则绑定到request上，说明当前用户是合法的
+                request.__user__ = user
+        if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
+            return web.HTTPFound('/signin')
+        # 执行下一步
+        return (await handler(request))
+
+    return auth
 
 
 async def response_factory(app, handler):
@@ -125,6 +129,7 @@ async def response_factory(app, handler):
         if isinstance(r, bytes):
             resp = web.Response(body=r)
             resp.content_type = 'application/octet-stream'
+
         # 如果响应结果为字符串
         if isinstance(r, str):
             # 先判断是不是需要重定向，是的话直接用重定向的地址重定向
@@ -145,6 +150,7 @@ async def response_factory(app, handler):
                 resp.content_type = 'application/json;charset=utf-8'
                 return resp
             else:
+                r['__user__'] = request.__user__
                 # 如果有'__template__'为key的值，则说明要套用jinja2的模板，'__template__'Key对应的为模板网页所在位置
                 resp = web.Response(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
                 resp.content_type = 'text/html;charset=utf-8'
@@ -204,7 +210,7 @@ async def init(loop):
     # 譬如这里logger_factory的handler参数其实就是response_factory()
     # middlewares的最后一个元素的Handler会通过routes查找到相应的，其实就是routes注册的对应handler
     app = web.Application(loop=loop, middlewares=[
-        logger_factory, response_factory
+        logger_factory, auth_factory, response_factory
     ])
     # 初始化jinja2模板
     init_jinja2(app, filters=dict(datetime=datetime_filter))
