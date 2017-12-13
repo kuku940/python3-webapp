@@ -33,3 +33,8 @@ python环境及以下库：
 		- markdown2.py:支持markdown显示的插件
 		- pymonnitor.py: 用于支持自动检测代码改动重启服务
 		- test/testORM.py: 测试orm框架的正确性测试类
+
+### 启动运行
+
+启动app.py文件，访问[http://127.0.0.1:9000](http://127.0.0.1:9000)网址，可看到如下图的启动页面：
+![](./www/static/img/index.jpg)
